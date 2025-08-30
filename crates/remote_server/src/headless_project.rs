@@ -62,6 +62,74 @@ pub struct HeadlessAppState {
     pub extension_host_proxy: Arc<ExtensionHostProxy>,
 }
 
+/// Convert Windows UNC WSL path to native WSL path
+/// Converts: //?/UNC/wsl.localhost/DISTRO/path/to/file or \\?\UNC\wsl.localhost\DISTRO\path\to\file
+/// To: /path/to/file
+fn convert_unc_to_wsl_path(unc_path: &str) -> Option<String> {
+    // Handle both forward slash and backslash formats
+    let normalized = unc_path.replace('\\', "/");
+    
+    // Try to strip common UNC WSL path prefixes
+    for prefix in &[
+        "//?/UNC/wsl.localhost/",
+        "//wsl.localhost/",
+        "\\\\wsl.localhost\\",
+    ] {
+        let prefix_normalized = prefix.replace('\\', "/");
+        if let Some(stripped) = normalized.strip_prefix(&prefix_normalized) {
+            // Find first slash after distro name to get the actual path
+            if let Some(slash_pos) = stripped.find('/') {
+                return Some(stripped[slash_pos..].to_string());
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_unc_to_wsl_path() {
+        // Test with forward slashes
+        assert_eq!(
+            convert_unc_to_wsl_path("//?/UNC/wsl.localhost/NixOS/home/nixos/documents/zed"),
+            Some("/home/nixos/documents/zed".to_string())
+        );
+        
+        // Test with backslashes
+        assert_eq!(
+            convert_unc_to_wsl_path("\\\\?\\UNC\\wsl.localhost\\Ubuntu\\usr\\local\\bin"),
+            Some("/usr/local/bin".to_string())
+        );
+        
+        // Test with different distro name
+        assert_eq!(
+            convert_unc_to_wsl_path("//wsl.localhost/Debian/etc/config"),
+            Some("/etc/config".to_string())
+        );
+        
+        // Test root path
+        assert_eq!(
+            convert_unc_to_wsl_path("//?/UNC/wsl.localhost/NixOS/"),
+            Some("/".to_string())
+        );
+        
+        // Test non-UNC path (should return None)
+        assert_eq!(
+            convert_unc_to_wsl_path("/home/user/documents"),
+            None
+        );
+        
+        // Test Windows-style path (should return None)
+        assert_eq!(
+            convert_unc_to_wsl_path("C:\\Users\\Documents"),
+            None
+        );
+    }
+}
+
 impl HeadlessProject {
     pub fn init(cx: &mut App) {
         settings::init(cx);
@@ -392,7 +460,17 @@ impl HeadlessProject {
     ) -> Result<proto::AddWorktreeResponse> {
         use client::ErrorCodeExt;
         let fs = this.read_with(&cx, |this, _| this.fs.clone())?;
-        let path = PathBuf::from_proto(shellexpand::tilde(&message.payload.path).to_string());
+        let mut path = PathBuf::from_proto(shellexpand::tilde(&message.payload.path).to_string());
+        
+        // Convert UNC WSL paths to native WSL paths
+        // e.g., //?/UNC/wsl.localhost/DISTRO/path/to/file -> /path/to/file
+        if let Some(path_str) = path.to_str() {
+            log::info!("AddWorktree received path: {}", path_str);
+            if let Some(converted) = convert_unc_to_wsl_path(path_str) {
+                log::info!("Converted UNC path from {} to {}", path_str, converted);
+                path = PathBuf::from(converted);
+            }
+        }
 
         let canonicalized = match fs.canonicalize(&path).await {
             Ok(path) => path,

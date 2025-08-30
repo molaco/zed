@@ -1204,6 +1204,7 @@ impl WorkspaceDb {
             RemoteConnectionKind::Wsl => Some(RemoteConnectionOptions::Wsl(WslConnectionOptions {
                 distro_name: distro?,
                 user: user,
+                env: None, // Environment is not persisted
             })),
             RemoteConnectionKind::Ssh => Some(RemoteConnectionOptions::Ssh(SshConnectionOptions {
                 host: host?,

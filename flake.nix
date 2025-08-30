@@ -1,6 +1,5 @@
 {
   description = "High-performance, multiplayer code editor from the creators of Atom and Tree-sitter";
-
   inputs = {
     nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz";
     rust-overlay = {
@@ -9,13 +8,14 @@
     };
     crane.url = "github:ipetkov/crane";
     flake-compat.url = "github:edolstra/flake-compat";
+    claude-code.url = "github:sadjow/claude-code-nix";
   };
-
   outputs =
     {
       nixpkgs,
       rust-overlay,
       crane,
+      claude-code,
       ...
     }:
     let
@@ -25,8 +25,21 @@
         "aarch64-linux"
         "aarch64-darwin"
       ];
-
-      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      overlays = [
+        rust-overlay.overlays.default
+        claude-code.overlays.default
+      ]; # Apply both overlays
+      forAllSystems =
+        f:
+        nixpkgs.lib.genAttrs systems (
+          system:
+          f (
+            import nixpkgs {
+              inherit system overlays;
+              config.allowUnfree = true;
+            }
+          )
+        );
       mkZed =
         pkgs:
         let
@@ -41,6 +54,8 @@
       packages = forAllSystems (pkgs: rec {
         default = mkZed pkgs;
         debug = default.override { profile = "dev"; };
+        zed-editor = default;
+        claude-code = pkgs.claude-code; # Add claude-code package
       });
       devShells = forAllSystems (pkgs: {
         default = pkgs.callPackage ./nix/shell.nix {
@@ -48,11 +63,8 @@
         };
       });
       formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
-      overlays.default = final: _: {
-        zed-editor = mkZed final;
-      };
+      overlays.default = final: _: { zed-editor = mkZed final; };
     };
-
   nixConfig = {
     extra-substituters = [
       "https://zed.cachix.org"

@@ -50,6 +50,10 @@ pub enum OpenRequestKind {
 
 impl OpenRequest {
     pub fn parse(request: RawOpenRequest, cx: &App) -> Result<Self> {
+        Self::parse_with_env(request, None, cx)
+    }
+
+    pub fn parse_with_env(request: RawOpenRequest, env: Option<HashMap<String, String>>, cx: &App) -> Result<Self> {
         let mut this = Self::default();
 
         this.diff_paths = request.diff_paths;
@@ -65,6 +69,7 @@ impl OpenRequest {
             this.remote_connection = Some(RemoteConnectionOptions::Wsl(WslConnectionOptions {
                 distro_name,
                 user,
+                env, // Use the CLI environment if available
             }));
         }
 
@@ -328,12 +333,13 @@ pub async fn handle_cli_connection(
             } => {
                 if !urls.is_empty() {
                     cx.update(|cx| {
-                        match OpenRequest::parse(
+                        match OpenRequest::parse_with_env(
                             RawOpenRequest {
                                 urls,
                                 diff_paths,
                                 wsl,
                             },
+                            env,
                             cx,
                         ) {
                             Ok(open_request) => {

@@ -19,10 +19,20 @@ use std::{
 };
 use util::paths::{PathStyle, RemotePathBuf};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WslConnectionOptions {
     pub distro_name: String,
     pub user: Option<String>,
+    pub env: Option<HashMap<String, String>>,
+}
+
+impl std::hash::Hash for WslConnectionOptions {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Hash only fields that identify the connection, not the environment
+        self.distro_name.hash(state);
+        self.user.hash(state);
+        // Explicitly do not hash env - it's not part of the connection identity
+    }
 }
 
 pub(crate) struct WslRemoteConnection {
@@ -370,6 +380,14 @@ impl RemoteConnection for WslRemoteConnection {
 
         let mut script = String::new();
 
+        // Apply stored environment from original CLI context first
+        if let Some(stored_env) = &self.connection_options.env {
+            for (k, v) in stored_env.iter() {
+                write!(&mut script, "{}='{}' ", k, v).unwrap();
+            }
+        }
+
+        // Apply runtime environment (can override stored environment)
         for (k, v) in env.iter() {
             write!(&mut script, "{}='{}' ", k, v).unwrap();
         }
