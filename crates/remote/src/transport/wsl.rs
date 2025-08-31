@@ -414,7 +414,7 @@ impl RemoteConnection for WslRemoteConnection {
                 working_dir,
                 "--".to_string(),
                 self.shell.clone(),
-                "-c".to_string(),
+                "-lc".to_string(),
                 shlex::try_quote(&script)?.to_string(),
             ]
         } else {
@@ -425,7 +425,7 @@ impl RemoteConnection for WslRemoteConnection {
                 working_dir,
                 "--".to_string(),
                 self.shell.clone(),
-                "-c".to_string(),
+                "-lc".to_string(),
                 shlex::try_quote(&script)?.to_string(),
             ]
         };
