@@ -90,12 +90,13 @@ impl WslRemoteConnection {
     }
 
     async fn detect_shell(&self) -> Result<String> {
+        // Use sh -l to get the login shell environment where SHELL is properly set
         Ok(self
-            .run_wsl_command("sh", &["-c", "echo $SHELL"])
+            .run_wsl_command("sh", &["-lc", "echo $SHELL"])
             .await
             .ok()
             .and_then(|shell_path| shell_path.trim().split('/').next_back().map(str::to_string))
-            .unwrap_or_else(|| "bash".to_string()))
+            .unwrap_or_else(|| "sh".to_string()))
     }
 
     async fn windows_path_to_wsl_path(&self, source: &Path) -> Result<String> {
@@ -163,8 +164,10 @@ impl WslRemoteConnection {
             return Ok(dst_path);
         }
 
+        // Check if server exists and works - use login shell in case it needs Nix environment
+        let version_check = format!("{} version", dst_path.to_string());
         if self
-            .run_wsl_command(&dst_path.to_string(), &["version"])
+            .run_wsl_command(&self.shell, &["-lc", &version_check])
             .await
             .is_ok()
         {
@@ -264,7 +267,7 @@ impl WslRemoteConnection {
             )
         };
 
-        self.run_wsl_command("sh", &["-c", &script])
+        self.run_wsl_command(&self.shell, &["-c", &script])
             .await
             .map_err(|e| anyhow!("Failed to extract server binary: {}", e))?;
         Ok(())
@@ -304,7 +307,7 @@ impl RemoteConnection for WslRemoteConnection {
             }
         }
         let proxy_process = match self
-            .wsl_command("sh", &["-lc", &proxy_command])
+            .wsl_command(&self.shell, &["-lc", &proxy_command])
             .kill_on_drop(true)
             .spawn()
         {
@@ -401,7 +404,7 @@ impl RemoteConnection for WslRemoteConnection {
                 script.push_str(&arg);
             }
         } else {
-            write!(&mut script, "exec {} -l", self.shell).unwrap();
+            write!(&mut script, "exec \"{}\" -l", self.shell).unwrap();
         }
 
         let wsl_args = if let Some(user) = &self.connection_options.user {
