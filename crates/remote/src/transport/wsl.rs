@@ -90,9 +90,9 @@ impl WslRemoteConnection {
     }
 
     async fn detect_shell(&self) -> Result<String> {
-        // Use sh -l to get the login shell environment where SHELL is properly set
+        // Use sh -c (not -lc) to preserve the current environment including nix-shell
         Ok(self
-            .run_wsl_command("sh", &["-lc", "echo $SHELL"])
+            .run_wsl_command("sh", &["-c", "echo $SHELL"])
             .await
             .ok()
             .and_then(|shell_path| shell_path.trim().split('/').next_back().map(str::to_string))
@@ -164,10 +164,10 @@ impl WslRemoteConnection {
             return Ok(dst_path);
         }
 
-        // Check if server exists and works - use login shell in case it needs Nix environment
-        let version_check = format!("{} version", dst_path.to_string());
+        // Check if server exists and works - use non-login shell to preserve nix-shell environment
+        let version_check = format!("{} version", dst_path);
         if self
-            .run_wsl_command(&self.shell, &["-lc", &version_check])
+            .run_wsl_command(&self.shell, &["-c", &version_check])
             .await
             .is_ok()
         {
@@ -307,7 +307,7 @@ impl RemoteConnection for WslRemoteConnection {
             }
         }
         let proxy_process = match self
-            .wsl_command(&self.shell, &["-lc", &proxy_command])
+            .wsl_command(&self.shell, &["-c", &proxy_command])
             .kill_on_drop(true)
             .spawn()
         {
@@ -404,7 +404,7 @@ impl RemoteConnection for WslRemoteConnection {
                 script.push_str(&arg);
             }
         } else {
-            write!(&mut script, "exec \"{}\" -l", self.shell).unwrap();
+            write!(&mut script, "exec \"{}\"", self.shell).unwrap();
         }
 
         let wsl_args = if let Some(user) = &self.connection_options.user {
@@ -417,7 +417,7 @@ impl RemoteConnection for WslRemoteConnection {
                 working_dir,
                 "--".to_string(),
                 self.shell.clone(),
-                "-lc".to_string(),
+                "-c".to_string(),
                 shlex::try_quote(&script)?.to_string(),
             ]
         } else {
@@ -428,7 +428,7 @@ impl RemoteConnection for WslRemoteConnection {
                 working_dir,
                 "--".to_string(),
                 self.shell.clone(),
-                "-lc".to_string(),
+                "-c".to_string(),
                 shlex::try_quote(&script)?.to_string(),
             ]
         };
